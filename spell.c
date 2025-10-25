@@ -5,7 +5,9 @@
 #include <unistd.h> 
 #include <ctype.h> 
 #include <dirent.h> 
+#include <sys/stat.h>
 #include <errno.h>
+#include <linux/limits.h>
 
 #define BUFFER 128
 #define DEFAULT ".txt"
@@ -104,14 +106,95 @@ void free_dict(void) {
     dict = NULL;
 }
 
+void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, int *pathcount) {
+    if (argc < 2){
+        fprintf(stderr, "Error: incorrect argument format\n");
+        exit(EXIT_FAILURE); 
+    }
+    int track = 1; 
+    if (track < argc && strcmp(argv[track], "-s") == 0) {
+        if (track + 1 >= argc) {
+            fprintf(stderr, "Error: missing file name suffix\n");
+            exit(EXIT_FAILURE);
+        }
+        *suffix = argv[track + 1];
+        track += 2; 
+    }
+    if (track >= argc) {
+        fprintf(stderr, "Error: missing dictionary file\n");
+        exit(EXIT_FAILURE);
+    }
+    *dictfile = argv[track++];
+
+    if (track < argc) {
+        *paths = &argv[track];
+        *pathcount = argc - track;
+    }
+}
+
+int suff_check(char *name, char *suffix) {
+    size_t nlen = strlen(name);
+    size_t slen = strlen(suffix);
+    if (slen > nlen) return 0;
+    return strcmp(name + nlen - slen, suffix) == 0;
+}
+
+void rec_dir(char *dirfile,char *suffix) {
+    DIR *dir = opendir(dirfile);
+    if (dir == NULL){
+        return; 
+    }
+    struct dirent *current;
+
+    while ((current = readdir(dir))) {
+        if (strcmp(current->d_name, ".") == 0 || strcmp(current->d_name, "..") == 0)
+            continue;
+
+        char path[PATH_MAX];
+        snprintf(path, sizeof(path), "%s/%s", dirfile, current->d_name);
+
+        struct stat st;
+        if (stat(path, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                rec_dir(path, suffix);
+            } else if (S_ISREG(st.st_mode)) {
+                if (suff_check(current->d_name, suffix)) {
+                    scan_file(path);
+                }
+            }
+        }
+    }
+    closedir(dir);
+}
+
+void traverse(char *path, char *suffix) {
+    struct stat st;
+    if (stat(path, &st) != 0){
+        return; 
+    }
+    if (S_ISDIR(st.st_mode)){
+        rec_dir(path, suffix);
+    }
+    else if (S_ISREG(st.st_mode) && suff_check(path, suffix)){
+        scan_file(path);
+    }
+}
+
 int main(int argc, char **argv) {
     char *suffix = DEFAULT; 
     char *dictfile = NULL;
     char **paths = NULL;
     int pathcount = 0;
 
-    parse_args(argc, argv, &suffix, &dictfile, &paths, &pathcount);
+    args(argc, argv, &suffix, &dictfile, &paths, &pathcount);
     create_dict(dictfile);
 
+    if (pathcount == 0) {
+        scan_stdin(); 
+    } else {
+        for (int i = 0; i < pathcount; i++) {
+            traverse(paths[i], suffix);
+        }
+    }
     return 0;
 }
