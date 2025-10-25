@@ -8,6 +8,8 @@
 #include <errno.h>
 
 #define BUFFER 128
+#define DEFAULT ".txt"
+
 char **dict = NULL;
 size_t wordcount = 0; 
 
@@ -28,7 +30,7 @@ void add_word(const char *word, size_t *capacity) {
         char **tmp = realloc(dict, *capacity * sizeof(char *));
         if (!tmp) {
             perror("realloc");
-            exit(2);
+            exit(EXIT_FAILURE);
         }
         dict = tmp;
     }
@@ -36,7 +38,7 @@ void add_word(const char *word, size_t *capacity) {
     dict[wordcount] = strdup(word);
     if (!dict[wordcount]) {
         perror("strdup");
-        exit(2);
+        exit(EXIT_FAILURE);
     }
     wordcount++;
 }
@@ -45,7 +47,7 @@ void create_dict(char *file) {
     int fd = open(file, O_RDONLY);
     if (fd < 0) {
         perror(file);
-        exit(2);
+        exit(EXIT_FAILURE);
     }
 
     size_t capacity = 256;
@@ -53,11 +55,11 @@ void create_dict(char *file) {
     if (dict == NULL) {
         perror("malloc");
         close(fd);
-        exit(2);
+        exit(EXIT_FAILURE);
     }
 
     char buffer[BUFFER];
-    char word[128];
+    char word[1024];
     size_t len = 0;
     int bytes;
 
@@ -82,7 +84,7 @@ void create_dict(char *file) {
     if (bytes < 0) {
         perror("read");
         close(fd);
-        exit(2);
+        exit(EXIT_FAILURE);
     }
     if (len > 0) {
         word[len] = '\0';
@@ -94,5 +96,22 @@ void create_dict(char *file) {
     qsort(dict, wordcount, sizeof(char *), cmpstr);
 }
 
+void free_dict(void) {
+    for (size_t i = 0; i < wordcount; i++){
+        free(dict[i]);
+    }
+    free(dict);
+    dict = NULL;
+}
 
+int main(int argc, char **argv) {
+    char *suffix = DEFAULT; 
+    char *dictfile = NULL;
+    char **paths = NULL;
+    int pathcount = 0;
 
+    parse_args(argc, argv, &suffix, &dictfile, &paths, &pathcount);
+    create_dict(dictfile);
+
+    return 0;
+}
