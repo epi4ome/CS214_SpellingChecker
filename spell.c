@@ -294,5 +294,6 @@ int main(int argc, char **argv) {
             traverse(paths[i], suffix);
         }
     }
+    free_dict();
     return 0;
 }
