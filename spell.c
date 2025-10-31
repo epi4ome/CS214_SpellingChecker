@@ -20,6 +20,7 @@ typedef struct {
 dictW *dict = NULL;
 size_t wordcount = 0;
 size_t capacity = 0;
+int err_found = 0;
 
 // Create dictionary
 
@@ -175,34 +176,55 @@ char *join_path(const char *dir, const char *file) {
 // Spelling check
 
 int dict_contains(const char *word) {
-    dictW key = {.lower = (char *)word};
-    return bsearch(&key, dict, wordcount, sizeof(dictW), cmpstr) != NULL;
+    // FIXED: Create lowercase copy for binary search
+    char lower_word[1024];
+    strncpy(lower_word, word, sizeof(lower_word)-1);
+    lower_word[sizeof(lower_word)-1] = '\0';
+    
+    // Make a copy to lowercase (don't modify original)
+    for (int i = 0; lower_word[i]; i++) {
+        lower_word[i] = tolower((unsigned char)lower_word[i]);
+    }
+
+    dictW key = {.lower = lower_word};
+    dictW *found = bsearch(&key, dict, wordcount, sizeof(dictW), cmpstr);
+    
+    if (!found) return 0;
+
+    // Now check capitalization rules
+    char *dict_word = found->ori;
+    if (strlen(dict_word) != strlen(word)) return 0;
+
+    for (size_t i = 0; dict_word[i]; i++) {
+        if (isupper((unsigned char)dict_word[i])) {
+            // Uppercase in dict must match exactly
+            if (dict_word[i] != word[i]) return 0;
+        }
+    }
+    
+    return 1;
 }
 
 void report_error(const char *filename, int line, int col, const char *word) {
+    err_found = 1;
     if (filename)
-        fprintf(stderr, "%s:%d:%d: %s\n", filename, line, col, word);
+        fprintf(stderr, "%s:%d:%d %s\n", filename, line, col, word);
     else
-        fprintf(stderr, "stdin:%d:%d: %s\n", line, col, word);
-}
-
-void clean_word(char *word) {
-    char *start = word;
-    while (*start && !isalnum((unsigned char)*start)) start++;
-    char *end = start + strlen(start);
-    while (end > start && !isalnum((unsigned char)end[-1])) end--;
-    *end = '\0';
-    memmove(word, start, end - start + 1);
-    lower_case(word);
+        fprintf(stderr, "stdin:%d:%d %s\n", line, col, word);
 }
 
 void check_word(char *word, const char *filename, int line, int col) {
     if (!word || !*word) return;
-    int all_digits = 1;
+    
+    // Skip if all digits/symbols (no letters)
+    int has_letter = 0;
     for (char *p = word; *p; p++) {
-        if (!isdigit((unsigned char)*p)) { all_digits = 0; break; }
+        if (isalpha((unsigned char)*p)) {
+            has_letter = 1;
+            break;
+        }
     }
-    if (all_digits) return;
+    if (!has_letter) return;
 
     if (!dict_contains(word)) {
         report_error(filename, line, col, word);
@@ -219,30 +241,61 @@ void scan_stream(int fd, const char *filename) {
         for (ssize_t i = 0; i < bytes; i++) {
             unsigned char c = (unsigned char)buffer[i];
 
-            if (isalpha(c) || c == '\'' || c == '-') {
-                if (wlen == 0) token_col = col;
-                if (wlen < (int)sizeof(word) - 1)
-                    word[wlen++] = c;
-            } else {
+            if (isspace(c)) {
                 if (wlen > 0) {
                     word[wlen] = '\0';
-                    clean_word(word);
-                    if (word[0]) check_word(word, filename, line, token_col);
+                    
+                    // Strip leading punctuation
+                    char *start = word;
+                    int offset = 0;
+                    while (*start && strchr("([{\'\"", *start)) {
+                        start++;
+                        offset++;
+                    }
+                    
+                    // Strip trailing punctuation
+                    char *end = start + strlen(start);
+                    while (end > start && !isalnum((unsigned char)end[-1])) {
+                        end--;
+                    }
+                    *end = '\0';
+                    
+                    if (*start) {
+                        check_word(start, filename, line, token_col + offset);
+                    }
                     wlen = 0;
                 }
                 if (c == '\n') {
                     line++;
-                    col = 0;
+                    col = 1;
+                } else {
+                    col++;
                 }
+            } else {
+                if (wlen == 0) token_col = col;
+                if (wlen < (int)sizeof(word) - 1)
+                    word[wlen++] = c;
+                col++;
             }
-            col++;
         }
     }
 
     if (wlen > 0) {
         word[wlen] = '\0';
-        clean_word(word);
-        if (word[0]) check_word(word, filename, line, token_col);
+        char *start = word;
+        int offset = 0;
+        while (*start && strchr("([{\'\"", *start)) {
+            start++;
+            offset++;
+        }
+        char *end = start + strlen(start);
+        while (end > start && !isalnum((unsigned char)end[-1])) {
+            end--;
+        }
+        *end = '\0';
+        if (*start) {
+            check_word(start, filename, line, token_col + offset);
+        }
     }
 }
 
@@ -250,6 +303,7 @@ void scan_file(const char *filename) {
     int fd = open(filename, O_RDONLY);
     if (fd < 0) {
         perror(filename);
+        err_found = 1;
         return;
     }
     scan_stream(fd, filename);
@@ -292,11 +346,17 @@ void rec_dir(char *dirfile, char *suffix) {
 
 void traverse(char *path, char *suffix) {
     struct stat st;
-    if (stat(path, &st) != 0) return;
-    if (S_ISDIR(st.st_mode))
+    if (stat(path, &st) != 0) {
+        perror(path);
+        err_found = 1;
+        return;
+    }
+    if (S_ISDIR(st.st_mode)) {
         rec_dir(path, suffix);
-    else if (S_ISREG(st.st_mode) && suff_check(path, suffix))
+    } else if (S_ISREG(st.st_mode)) {
+        // FIXED: Don't check suffix for directly-specified files
         scan_file(path);
+    }
 }
 
 int main(int argc, char **argv) {
@@ -307,6 +367,12 @@ int main(int argc, char **argv) {
 
     args(argc, argv, &suffix, &dictfile, &paths, &pathcount);
     create_dict(dictfile);
+    /* Debug: report how many words were loaded into the dictionary */
+    fprintf(stderr, "DEBUG: dictionary words loaded = %zu\n", wordcount);
+    /* Debug: list loaded dictionary entries (lowercase) */
+    for (size_t i = 0; i < wordcount; i++) {
+        fprintf(stderr, "DEBUG: dict[%zu] ori='%s' lower='%s'\n", i, dict[i].ori, dict[i].lower);
+    }
 
     if (pathcount == 0)
         scan_stdin();
@@ -316,5 +382,5 @@ int main(int argc, char **argv) {
     }
 
     free_dict();
-    return 0;
+    return err_found ? EXIT_FAILURE : EXIT_SUCCESS;
 }

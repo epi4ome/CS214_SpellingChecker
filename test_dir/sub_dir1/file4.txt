@@ -1,0 +1,2 @@
+Let's also see if apostrophe's are handled properly
+MixedCASE wordslikethis and punctuation!
