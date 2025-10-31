@@ -9,7 +9,7 @@ int main(void) {
     const char *outfile = "output.txt";
 
     char command[256];
-    snprintf(command, sizeof(command), "./spell %s %s > %s", dictfile, testfile, outfile);
+    snprintf(command, sizeof(command), "./spell.o %s %s > %s", dictfile, testfile, outfile);
     int ret = system(command);
     if (ret != 0) {
         fprintf(stderr, "Error: spell command failed (exit %d)\n", ret);

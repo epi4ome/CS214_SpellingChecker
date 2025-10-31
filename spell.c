@@ -181,9 +181,9 @@ int dict_contains(const char *word) {
 
 void report_error(const char *filename, int line, int col, const char *word) {
     if (filename)
-        dprintf(STDOUT_FILENO, "%s:%d:%d: %s\n", filename, line, col, word);
+        fprintf(stdout, "%s:%d:%d: %s\n", filename, line, col, word);
     else
-        dprintf(STDOUT_FILENO, "stdin:%d:%d: %s\n", line, col, word);
+        fprintf(stdout, "stdin:%d:%d: %s\n", line, col, word);
 }
 
 void clean_word(char *word) {
