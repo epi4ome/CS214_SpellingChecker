@@ -11,6 +11,7 @@
 
 #define BUFFER 128
 #define DEFAULT ".txt"
+#define OPENING_PUNCTUATION "([{\'\""
 
 typedef struct {
     char *ori;
@@ -22,7 +23,7 @@ size_t wordcount = 0;
 size_t capacity = 0;
 int err_found = 0;
 
-// Create dictionary
+// Dictionary functions
 
 int cmpstr(const void *a, const void *b) {
     const dictW *wa = (const dictW*)a;
@@ -38,7 +39,11 @@ void lower_case(char *word) {
 }
 
 void resize_dict() {
-    capacity = (capacity == 0) ? 256 : capacity * 2;
+    if (capacity == 0) {
+        capacity = 256;
+    } else {
+        capacity = capacity * 2;
+    }
     dictW *tmp = realloc(dict, capacity * sizeof(dictW));
     if (!tmp) {
         perror("realloc");
@@ -55,11 +60,15 @@ int check_dup(const char *lower_word) {
 }
 
 void add_word(const char *word) {
-    char *lower = strdup(word);
+    size_t len = strlen(word);
+    
+    char *lower = malloc(len + 1);
     if (!lower) {
-        perror("strdup");
+        perror("malloc for lower");
         exit(EXIT_FAILURE);
     }
+    strcpy(lower, word); 
+    
     lower_case(lower);
     if (check_dup(lower)) {
         free(lower);
@@ -69,12 +78,17 @@ void add_word(const char *word) {
     if (wordcount >= capacity)
         resize_dict();
 
-    dict[wordcount].ori = strdup(word);
-    dict[wordcount].lower = lower;
-    if (!dict[wordcount].ori) {
-        perror("strdup");
+    char *ori = malloc(len + 1);
+    if (!ori) {
+        perror("malloc for ori");
+        free(lower);
         exit(EXIT_FAILURE);
     }
+    strcpy(ori, word);
+
+    dict[wordcount].ori = ori;
+    dict[wordcount].lower = lower;
+    
     wordcount++;
 }
 
@@ -93,15 +107,16 @@ void create_dict(char *file) {
     while ((bytes = read(fd, buffer, BUFFER)) > 0) {
         for (ssize_t i = 0; i < bytes; i++) {
             char c = buffer[i];
-            if (c != '\n') {
-                if (len < sizeof(word) - 1)
-                    word[len++] = c;
-            } else {
+            
+            if (c == '\n') {
                 if (len > 0) {
                     word[len] = '\0';
                     add_word(word);
-                    len = 0;
                 }
+                len = 0;
+            } else {
+                if (len < sizeof(word) - 1)
+                    word[len++] = c;
             }
         }
     }
@@ -125,7 +140,7 @@ void free_dict() {
     capacity = 0;
 }
 
-// Parse arguments
+// Argument Parsing
 
 void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, int *pathcount) {
     if (argc < 2) {
@@ -134,6 +149,7 @@ void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, 
     }
 
     int track = 1;
+    
     if (track < argc && strcmp(argv[track], "-s") == 0) {
         if (track + 1 >= argc) {
             fprintf(stderr, "Error: missing file name suffix\n");
@@ -155,11 +171,20 @@ void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, 
     }
 }
 
+// Path Management
+
 int suff_check(char *name, char *suffix) {
     size_t nlen = strlen(name);
     size_t slen = strlen(suffix);
     if (slen > nlen) return 0;
     return strcmp(name + nlen - slen, suffix) == 0;
+}
+
+int ends_with_suffix(const char *path, const char *suffix) {
+    size_t path_len = strlen(path);
+    size_t suff_len = strlen(suffix);
+    if (suff_len > path_len) return 0;
+    return strcmp(path + path_len - suff_len, suffix) == 0;
 }
 
 char *join_path(const char *dir, const char *file) {
@@ -175,34 +200,40 @@ char *join_path(const char *dir, const char *file) {
 
 // Spelling check
 
+int check_capitalization(const char *input_word, const char *dict_word) {
+    size_t len = strlen(input_word);
+    if (len != strlen(dict_word)) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (isupper((unsigned char)dict_word[i])) {
+            if (dict_word[i] != input_word[i]) {
+                return 0;
+            }
+        }
+        else if (tolower((unsigned char)dict_word[i]) != tolower((unsigned char)input_word[i])) {
+             return 0;
+        }
+    }
+    return 1;
+}
+
 int dict_contains(const char *word) {
-    // FIXED: Create lowercase copy for binary search
     char lower_word[1024];
     strncpy(lower_word, word, sizeof(lower_word)-1);
     lower_word[sizeof(lower_word)-1] = '\0';
     
-    // Make a copy to lowercase (don't modify original)
     for (int i = 0; lower_word[i]; i++) {
         lower_word[i] = tolower((unsigned char)lower_word[i]);
     }
-
     dictW key = {.lower = lower_word};
     dictW *found = bsearch(&key, dict, wordcount, sizeof(dictW), cmpstr);
     
-    if (!found) return 0;
-
-    // Now check capitalization rules
-    char *dict_word = found->ori;
-    if (strlen(dict_word) != strlen(word)) return 0;
-
-    for (size_t i = 0; dict_word[i]; i++) {
-        if (isupper((unsigned char)dict_word[i])) {
-            // Uppercase in dict must match exactly
-            if (dict_word[i] != word[i]) return 0;
-        }
+    if (!found) {
+        return 0;
     }
-    
-    return 1;
+
+    return check_capitalization(word, found->ori);
 }
 
 void report_error(const char *filename, int line, int col, const char *word) {
@@ -214,9 +245,10 @@ void report_error(const char *filename, int line, int col, const char *word) {
 }
 
 void check_word(char *word, const char *filename, int line, int col) {
-    if (!word || !*word) return;
-    
-    // Skip if all digits/symbols (no letters)
+    if (!word || !*word) {
+        return;
+    }
+
     int has_letter = 0;
     for (char *p = word; *p; p++) {
         if (isalpha((unsigned char)*p)) {
@@ -224,7 +256,9 @@ void check_word(char *word, const char *filename, int line, int col) {
             break;
         }
     }
-    if (!has_letter) return;
+    if (!has_letter) {
+        return;
+    }
 
     if (!dict_contains(word)) {
         report_error(filename, line, col, word);
@@ -244,27 +278,26 @@ void scan_stream(int fd, const char *filename) {
             if (isspace(c)) {
                 if (wlen > 0) {
                     word[wlen] = '\0';
-                    
-                    // Strip leading punctuation
+                
                     char *start = word;
                     int offset = 0;
-                    while (*start && strchr("([{\'\"", *start)) {
+                    while (*start && strchr(OPENING_PUNCTUATION, *start)) {
                         start++;
                         offset++;
                     }
                     
-                    // Strip trailing punctuation
                     char *end = start + strlen(start);
                     while (end > start && !isalnum((unsigned char)end[-1])) {
                         end--;
                     }
                     *end = '\0';
-                    
+
                     if (*start) {
                         check_word(start, filename, line, token_col + offset);
                     }
                     wlen = 0;
                 }
+                
                 if (c == '\n') {
                     line++;
                     col = 1;
@@ -272,9 +305,12 @@ void scan_stream(int fd, const char *filename) {
                     col++;
                 }
             } else {
-                if (wlen == 0) token_col = col;
-                if (wlen < (int)sizeof(word) - 1)
+                if (wlen == 0) {
+                    token_col = col; 
+                }
+                if (wlen < (int)sizeof(word) - 1) {
                     word[wlen++] = c;
+                }
                 col++;
             }
         }
@@ -284,7 +320,7 @@ void scan_stream(int fd, const char *filename) {
         word[wlen] = '\0';
         char *start = word;
         int offset = 0;
-        while (*start && strchr("([{\'\"", *start)) {
+        while (*start && strchr(OPENING_PUNCTUATION, *start)) {
             start++;
             offset++;
         }
@@ -314,7 +350,7 @@ void scan_stdin(void) {
     scan_stream(STDIN_FILENO, NULL);
 }
 
-// Directory traversal 
+// Directory Traversal 
 
 void rec_dir(char *dirfile, char *suffix) {
     DIR *dir = opendir(dirfile);
@@ -323,10 +359,10 @@ void rec_dir(char *dirfile, char *suffix) {
     }
     struct dirent *current;
     while ((current = readdir(dir))) {
-        if (strcmp(current->d_name, ".") == 0 || strcmp(current->d_name, "..") == 0)
+        if (current->d_name[0] == '.') {
             continue;
-        if (current->d_name[0] == '.')
-            continue;
+        }
+            
         char *path = join_path(dirfile, current->d_name);
 
         struct stat st;
@@ -346,16 +382,44 @@ void rec_dir(char *dirfile, char *suffix) {
 
 void traverse(char *path, char *suffix) {
     struct stat st;
-    if (stat(path, &st) != 0) {
-        perror(path);
-        err_found = 1;
-        return;
+    const char *final_path = path;
+    char *modified_path = NULL; 
+    int stat_res = stat(path, &st);
+
+    if (stat_res != 0 && !ends_with_suffix(path, suffix)) {
+        size_t new_len = strlen(path) + strlen(suffix) + 1;
+        
+        modified_path = malloc(new_len);
+        if (modified_path == NULL) {
+            perror("malloc");
+            err_found = 1;
+            return;
+        }
+        if (snprintf(modified_path, new_len, "%s%s", path, suffix) < 0) {
+            free(modified_path);
+            modified_path = NULL;
+            fprintf(stderr, "Error constructing path: %s\n", path);
+            err_found = 1;
+            return;
+        }
+        
+        stat_res = stat(modified_path, &st);
+        
+        if (stat_res == 0) {
+            final_path = modified_path; 
+        }
     }
-    if (S_ISDIR(st.st_mode)) {
-        rec_dir(path, suffix);
+
+    if (stat_res != 0) {
+        perror(path); 
+        err_found = 1;
+    } else if (S_ISDIR(st.st_mode)) {
+        rec_dir((char*)final_path, suffix);
     } else if (S_ISREG(st.st_mode)) {
-        // FIXED: Don't check suffix for directly-specified files
-        scan_file(path);
+        scan_file(final_path);
+    }
+    if (modified_path != NULL) {
+        free(modified_path);
     }
 }
 
@@ -367,20 +431,25 @@ int main(int argc, char **argv) {
 
     args(argc, argv, &suffix, &dictfile, &paths, &pathcount);
     create_dict(dictfile);
-    /* Debug: report how many words were loaded into the dictionary */
+    
     fprintf(stderr, "DEBUG: dictionary words loaded = %zu\n", wordcount);
-    /* Debug: list loaded dictionary entries (lowercase) */
     for (size_t i = 0; i < wordcount; i++) {
         fprintf(stderr, "DEBUG: dict[%zu] ori='%s' lower='%s'\n", i, dict[i].ori, dict[i].lower);
     }
 
-    if (pathcount == 0)
+    if (pathcount == 0) {
         scan_stdin();
-    else {
-        for (int i = 0; i < pathcount; i++)
+    } else {
+        for (int i = 0; i < pathcount; i++) {
             traverse(paths[i], suffix);
+        }
     }
 
     free_dict();
-    return err_found ? EXIT_FAILURE : EXIT_SUCCESS;
+    
+    if (err_found) {
+        return EXIT_FAILURE;
+    } else {
+        return EXIT_SUCCESS;
+    }
 }
