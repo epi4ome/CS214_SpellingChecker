@@ -1,0 +1,11 @@
+Hello, world! (This) is a test-file.
+It should ignore numbers like 1234 and 56-78.
+
+Some misspelled words include applle, bannnana, and exampel.
+Check (parentheses) and words-like-this-dash.
+
+Also test mixedCase WordsLikeThis and punctuation!@#$%^&*() around words.
+
+Well-known phrase should be correct. 
+But wordd-with-error should trigger.
+Let's also see if apostrophe's are handled properly.

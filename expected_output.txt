@@ -1,0 +1,9 @@
+test_all.txt:1:36: test-file
+test_all.txt:3:30: applle
+test_all.txt:3:39: bannnana
+test_all.txt:3:53: exampel
+test_all.txt:4:41: words-like-this-dash
+test_all.txt:6:6: mixedcase
+test_all.txt:6:19: wordslikethis
+test_all.txt:8:5: wordd-with-error
+test_all.txt:9:28: apostrophe's
