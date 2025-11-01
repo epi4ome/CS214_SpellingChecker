@@ -7,7 +7,6 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include <linux/limits.h>
 
 #define BUFFER 128
 #define DEFAULT ".txt"
@@ -170,9 +169,11 @@ void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, 
         exit(EXIT_FAILURE);
     }
     
-    if (strcmp(argv[track], "-s") == 0) {
-        fprintf(stderr, "Error: multiple -s flags are not allowed\n");
-        exit(EXIT_FAILURE);
+   for (int i = track; i < argc; i++) {
+        if (strcmp(argv[i], "-s") == 0) {
+            fprintf(stderr, "Error: incorrect -s usage\n");
+            exit(EXIT_FAILURE);
+        }
     }
     
     *dictfile = argv[track++];
