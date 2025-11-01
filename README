@@ -1,1 +1,9 @@
+Group:
+1. Audrey Wang (aw1086)
+2. Oscar Iwaniuk (oi66)
+
+Design notes:
+    For the data structure of the dictionary, we chose an array of structs that contains two string pointers: one to the original-case spelling and one to the lowercase version. We used binary search on the lowercase words (sorted using qsort) to check for spelling errors and then compare it to original if found. The words loaded from the dictionary and temporary copies of the file paths are both dynamically allocated. Additionally, we implemented the buffer strategy to scan words from the input text files to reduce system calls.
+
+
 

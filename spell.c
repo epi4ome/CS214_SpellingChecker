@@ -23,7 +23,7 @@ size_t wordcount = 0;
 size_t capacity = 0;
 int err_found = 0;
 
-// Dictionary functions
+// Dictionary
 
 int cmpstr(const void *a, const void *b) {
     const dictW *wa = (const dictW*)a;
@@ -140,7 +140,7 @@ void free_dict() {
     capacity = 0;
 }
 
-// Argument Parsing
+// Argument parsing
 
 void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, int *pathcount) {
     if (argc < 2) {
@@ -156,6 +156,12 @@ void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, 
             exit(EXIT_FAILURE);
         }
         *suffix = argv[track + 1];
+
+        if (strchr(*suffix, '.') == NULL) {
+            fprintf(stderr, "Error: file name suffix %s must contain .\n", *suffix);
+            exit(EXIT_FAILURE);
+        }
+
         track += 2;
     }
 
@@ -163,7 +169,19 @@ void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, 
         fprintf(stderr, "Error: missing dictionary file\n");
         exit(EXIT_FAILURE);
     }
+    
+    if (strcmp(argv[track], "-s") == 0) {
+        fprintf(stderr, "Error: multiple -s flags are not allowed\n");
+        exit(EXIT_FAILURE);
+    }
+    
     *dictfile = argv[track++];
+
+    struct stat st;
+    if (stat(*dictfile, &st) != 0 || !S_ISREG(st.st_mode)) {
+        fprintf(stderr, "Error: invalid dictionary file\n");
+        exit(EXIT_FAILURE);
+    }
 
     if (track < argc) {
         *paths = &argv[track];
@@ -171,7 +189,7 @@ void args(int argc, char **argv, char **suffix, char **dictfile, char ***paths, 
     }
 }
 
-// Path Management
+// Path methods
 
 int suff_check(char *name, char *suffix) {
     size_t nlen = strlen(name);
@@ -200,7 +218,7 @@ char *join_path(const char *dir, const char *file) {
 
 // Spelling check
 
-int check_capitalization(const char *input_word, const char *dict_word) {
+int check_capital(const char *input_word, const char *dict_word) {
     size_t len = strlen(input_word);
     if (len != strlen(dict_word)) {
         return 0;
@@ -233,7 +251,7 @@ int dict_contains(const char *word) {
         return 0;
     }
 
-    return check_capitalization(word, found->ori);
+    return check_capital(word, found->ori);
 }
 
 void report_error(const char *filename, int line, int col, const char *word) {
@@ -259,7 +277,6 @@ void check_word(char *word, const char *filename, int line, int col) {
     if (!has_letter) {
         return;
     }
-
     if (!dict_contains(word)) {
         report_error(filename, line, col, word);
     }
@@ -285,13 +302,11 @@ void scan_stream(int fd, const char *filename) {
                         start++;
                         offset++;
                     }
-                    
                     char *end = start + strlen(start);
                     while (end > start && !isalnum((unsigned char)end[-1])) {
                         end--;
                     }
                     *end = '\0';
-
                     if (*start) {
                         check_word(start, filename, line, token_col + offset);
                     }
@@ -431,11 +446,6 @@ int main(int argc, char **argv) {
 
     args(argc, argv, &suffix, &dictfile, &paths, &pathcount);
     create_dict(dictfile);
-    
-    fprintf(stderr, "DEBUG: dictionary words loaded = %zu\n", wordcount);
-    for (size_t i = 0; i < wordcount; i++) {
-        fprintf(stderr, "DEBUG: dict[%zu] ori='%s' lower='%s'\n", i, dict[i].ori, dict[i].lower);
-    }
 
     if (pathcount == 0) {
         scan_stdin();
