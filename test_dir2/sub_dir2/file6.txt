@@ -1,0 +1,2 @@
+Another test of words like hyphenated-word and parentheses (check)
+Numbers 42 and $100 should be ignored

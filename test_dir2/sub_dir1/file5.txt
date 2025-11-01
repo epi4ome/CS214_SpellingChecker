@@ -1,0 +1,2 @@
+A line with symbols !@# should ignore them
+End-of-line test-case works
