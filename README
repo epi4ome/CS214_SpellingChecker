@@ -7,3 +7,33 @@ Design notes:
 
 
 
+Test Plan:
+    Explicit-file scan
+    Command: ./spell dict2 [file1.txt] [file2.txt]test_dir2/file3.txt
+    What it tests: that the program scans only the explicitly listed files, reports misspellings in the format filename:line:col word (to stderr), and returns non-zero when any misspelling is found.
+
+    Recursive directory scan (default .txt)
+    Command: ./spell dict2 test_dir2
+    What it tests: recursive traversal into subdirectories and scanning of all files ending with the default .txt suffix; verifies correct filename/line/column reporting for each detected misspelling.
+
+    Custom-suffix scan (.bar) with mixed explicit files and directories
+    Command: ./spell -s .bar dict2 [file1.txt]test_dir2/sub_dir2 test_dir2/sub_dir2/sub_dir4
+    What it tests: that -s <suffix> overrides the default suffix (the suffix must include a dot), explicit files passed on the command line are scanned regardless of suffix, and that directories are searched recursively for files matching the custom suffix.
+    Example: using dictionary `dict2` and reading files in the directories `test_dir2/sub_dir1` and `test_dir2/sub_dir2` (recursively)
+
+    Error and argument validation checks
+    Commands: e.g., ./spell nonexist, missing args, or malformed -s usage
+    What it tests: proper error messages for invalid or missing dictionary files, missing arguments, and incorrect -s usage.
+
+    Capitalization and near-match detection
+    Setup: dict2 contains mixed-case entries (e.g., KiWI, Cherry) and test files include capitalization variants and close misspellings (e.g., applle, bannnana).
+    What it tests: case-handling rules (lowercasing for lookup plus a capitalization check) and correct identification of true misspellings versus acceptable capitalized forms.
+
+    Tokenization and punctuation handling
+    What it tests: stripping leading opening punctuation (e.g., ([{'"), trimming trailing non-alphanumeric characters, ignoring tokens with no letters (numbers/symbol-only), and handling hyphens/apostrophes according to the scanner logic.
+
+    Overlapping directories (duplication observation)
+    Example: passing both a parent directory and its nested subdirectory in one invocation.
+    What it tests / notes: files in the nested directory will be visited more than once (once via recursion and again via the explicit nested argument), producing duplicate reports; deduplication is not implemented by default.
+
+    Use these runs to reproduce and verify the program’s argument parsing, traversal behavior, suffix filtering, tokenization, capitalization rules, reporting format, and exit-code behavior.
